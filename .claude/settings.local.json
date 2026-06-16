@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /Users/puripat/.nvm/versions/node/v23.11.0/lib/node_modules/pnpm -name \"*.json\" -path \"*config*\" 2>/dev/null | head -5 *)",
+      "Read(//Users/puripat/.nvm/versions/node/v23.11.0/lib/node_modules/pnpm/**)",
+      "Read(//Users/puripat/**)"
+    ]
+  }
+}
