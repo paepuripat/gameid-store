@@ -9,8 +9,7 @@
     {
       "binding": "DB",
       "database_name": "gameid-store-db",
-      // Replace with real ID from: wrangler d1 create gameid-store-db
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "5dd2547c-100a-4462-90de-adfa1d07914a",
       "migrations_dir": "drizzle"
     }
   ]
