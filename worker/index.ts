@@ -232,6 +232,62 @@ api.post("/api/verify-slip", async (c) => {
 });
 
 
+api.post("/api/orders/:id/resend", async (c) => {
+  const orderId = c.req.param("id");
+  const body = (await c.req.json<{ email?: string }>().catch(() => ({}))) as { email?: string };
+
+  const db = createDb(c.env.DB);
+
+  const orderRows = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+  if (orderRows.length === 0) {
+    return c.json({ ok: false, message: "ไม่พบออเดอร์นี้" }, 404);
+  }
+  const order = orderRows[0];
+
+  if (order.status !== "paid" && order.status !== "delivered") {
+    return c.json({ ok: false, message: "ออเดอร์นี้ยังไม่ได้ชำระเงิน" }, 400);
+  }
+
+  const to = body.email ?? order.email;
+  if (!to) {
+    return c.json({ ok: false, message: "ไม่พบอีเมลสำหรับส่ง กรุณาระบุอีเมล" }, 400);
+  }
+
+  // Load the already-claimed credential — must NOT claim a new one
+  const credRows = await db
+    .select({ username: inventory.username, password: inventory.password, notes: inventory.notes })
+    .from(inventory)
+    .where(eq(inventory.orderId, orderId))
+    .limit(1);
+
+  if (credRows.length === 0) {
+    return c.json({ ok: false, message: "ไม่พบข้อมูลบัญชีที่ถูกจองไว้" }, 404);
+  }
+
+  const productRows = await db
+    .select({ name: products.name })
+    .from(products)
+    .where(eq(products.id, order.productId))
+    .limit(1);
+  const productName = productRows[0]?.name ?? order.productId;
+
+  try {
+    await sendCredentialEmail(c.env, { to, productName, credential: credRows[0] });
+    await c.env.DB.prepare(
+      "UPDATE orders SET status = 'delivered', delivered_at = ? WHERE id = ?",
+    )
+      .bind(Date.now(), orderId)
+      .run();
+    return c.json({ ok: true });
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    await c.env.DB.prepare("UPDATE orders SET delivery_error = ? WHERE id = ?")
+      .bind(errMsg, orderId)
+      .run();
+    return c.json({ ok: false, message: "ส่งอีเมลไม่สำเร็จ กรุณาลองใหม่" }, 500);
+  }
+});
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);

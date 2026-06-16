@@ -146,7 +146,14 @@ export function Checkout() {
                 const result = (await res.json()) as VerifyResult;
 
                 if (result.ok) {
-                  navigate("/success", { state: { credential: result.credential, emailDelivered: result.emailDelivered } });
+                  navigate("/success", {
+                    state: {
+                      credential: result.credential,
+                      emailDelivered: result.emailDelivered,
+                      orderId: order.orderId,
+                      email: email || null,
+                    },
+                  });
                 } else {
                   setVerifyError(result.message ?? "เกิดข้อผิดพลาด กรุณาลองใหม่");
                   setSubmitting(false);
