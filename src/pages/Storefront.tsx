@@ -73,9 +73,18 @@ export function Storefront() {
                       {product.description}
                     </p>
                   )}
-                  <p className="text-xl font-bold text-blue-600 mt-2">
-                    ฿{product.price.toLocaleString()}
-                  </p>
+                  <div className="flex items-center justify-between mt-2">
+                    <p className="text-xl font-bold text-blue-600">
+                      ฿{product.price.toLocaleString()}
+                    </p>
+                    <span className={`text-xs font-medium px-2 py-1 rounded-full ${
+                      product.stockCount === 1
+                        ? "bg-orange-100 text-orange-700"
+                        : "bg-green-100 text-green-700"
+                    }`}>
+                      {product.stockCount === 1 ? "เหลือชิ้นสุดท้าย!" : `เหลือ ${product.stockCount} ชิ้น`}
+                    </span>
+                  </div>
                 </div>
               </Link>
             ))}

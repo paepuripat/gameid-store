@@ -1,6 +1,6 @@
 /// <reference types="@cloudflare/workers-types" />
 import { Hono } from "hono";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { createDb } from "./db";
 import { products, inventory, orders } from "./db/schema";
 import type { VerifyResult } from "../src/types";
@@ -34,20 +34,22 @@ const api = new Hono<{ Bindings: Env }>();
 api.get("/api/products", async (c) => {
   const db = createDb(c.env.DB);
   const rows = await db
-    .selectDistinct({
+    .select({
       id: products.id,
       name: products.name,
       description: products.description,
       imageUrl: products.imageUrl,
       price: products.price,
       active: products.active,
+      stockCount: sql<number>`count(${inventory.id})`,
     })
     .from(products)
     .innerJoin(
       inventory,
       and(eq(inventory.productId, products.id), eq(inventory.status, "available")),
     )
-    .where(eq(products.active, 1));
+    .where(eq(products.active, 1))
+    .groupBy(products.id);
   return c.json(rows);
 });
 
@@ -55,9 +57,22 @@ api.get("/api/products/:id", async (c) => {
   const id = c.req.param("id");
   const db = createDb(c.env.DB);
   const rows = await db
-    .select()
+    .select({
+      id: products.id,
+      name: products.name,
+      description: products.description,
+      imageUrl: products.imageUrl,
+      price: products.price,
+      active: products.active,
+      stockCount: sql<number>`count(${inventory.id})`,
+    })
     .from(products)
+    .leftJoin(
+      inventory,
+      and(eq(inventory.productId, products.id), eq(inventory.status, "available")),
+    )
     .where(and(eq(products.id, id), eq(products.active, 1)))
+    .groupBy(products.id)
     .limit(1);
   if (rows.length === 0) {
     return c.json({ error: "not_found" }, 404);
@@ -185,7 +200,35 @@ api.post("/api/verify-slip", async (c) => {
     return c.json<VerifyResult>({ ok: false, reason: "sold_out", message: "สินค้าหมดแล้ว" });
   }
 
-  return c.json<VerifyResult>({ ok: true, credential: credRows[0] });
+  const cred = credRows[0];
+  let emailDelivered = false;
+
+  if (email) {
+    // Look up product name for the email subject/body
+    const productRows = await db
+      .select({ name: products.name })
+      .from(products)
+      .where(eq(products.id, order.productId))
+      .limit(1);
+    const productName = productRows[0]?.name ?? order.productId;
+
+    try {
+      await sendCredentialEmail(c.env, { to: email, productName, credential: cred });
+      await c.env.DB.prepare(
+        "UPDATE orders SET status = 'delivered', delivered_at = ? WHERE id = ?",
+      )
+        .bind(Date.now(), orderId)
+        .run();
+      emailDelivered = true;
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      await c.env.DB.prepare("UPDATE orders SET delivery_error = ? WHERE id = ?")
+        .bind(errMsg, orderId)
+        .run();
+    }
+  }
+
+  return c.json<VerifyResult>({ ok: true, credential: cred, emailDelivered });
 });
 
 

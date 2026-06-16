@@ -28,7 +28,9 @@ function CopyField({ label, value }: { label: string; value: string }) {
 
 export function Success() {
   const location = useLocation();
-  const credential = (location.state as { credential: RevealedCredential } | null)?.credential;
+  const state = location.state as { credential: RevealedCredential; emailDelivered?: boolean } | null;
+  const credential = state?.credential;
+  const emailDelivered = state?.emailDelivered ?? false;
 
   if (!credential) {
     return (
@@ -55,6 +57,13 @@ export function Success() {
           <p className="font-semibold text-green-800">ยืนยันการชำระเงินแล้ว</p>
           <p className="text-sm text-green-700 mt-1">บันทึกข้อมูลบัญชีด้านล่างไว้ให้ดี</p>
         </div>
+
+        {emailDelivered && (
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center gap-3">
+            <span className="text-xl">📧</span>
+            <p className="text-sm text-blue-800">เราส่งไอดีไปที่อีเมลของคุณแล้ว</p>
+          </div>
+        )}
 
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 flex flex-col gap-5">
           <h2 className="font-semibold text-gray-900">ข้อมูลบัญชีเกม</h2>

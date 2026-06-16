@@ -87,10 +87,19 @@ export function ProductDetail() {
               <p className="text-gray-600 leading-relaxed">{product.description}</p>
             )}
 
+            {product.stockCount === 1 && (
+              <p className="text-sm font-medium text-orange-600 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2">
+                เหลือชิ้นสุดท้าย — รีบซื้อก่อนหมด!
+              </p>
+            )}
+
             <div className="flex items-center justify-between pt-2 border-t border-gray-100">
-              <span className="text-3xl font-bold text-blue-600">
-                ฿{product.price.toLocaleString()}
-              </span>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-3xl font-bold text-blue-600">
+                  ฿{product.price.toLocaleString()}
+                </span>
+                <span className="text-xs text-gray-400">มีสินค้า {product.stockCount} ชิ้น</span>
+              </div>
               <button
                 className="bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 text-white font-semibold px-8 py-3 rounded-lg transition-colors"
                 disabled={buying}

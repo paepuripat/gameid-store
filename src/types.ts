@@ -5,6 +5,7 @@ export interface Product {
   imageUrl: string | null;
   price: number;
   active: number;
+  stockCount: number;
 }
 
 export interface CreatedOrder {
@@ -20,7 +21,7 @@ export interface RevealedCredential {
 }
 
 export type VerifyResult =
-  | { ok: true; credential: RevealedCredential }
+  | { ok: true; credential: RevealedCredential; emailDelivered: boolean }
   | {
       ok: false;
       reason:
