@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import type { Product } from "../types";
+import type { Product, CreatedOrder } from "../types";
 
 export function ProductDetail() {
   const { id } = useParams<{ id: string }>();
@@ -9,6 +9,7 @@ export function ProductDetail() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [buying, setBuying] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -91,10 +92,27 @@ export function ProductDetail() {
                 ฿{product.price.toLocaleString()}
               </span>
               <button
-                className="bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold px-8 py-3 rounded-lg transition-colors"
-                onClick={() => navigate("/checkout")}
+                className="bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 text-white font-semibold px-8 py-3 rounded-lg transition-colors"
+                disabled={buying}
+                onClick={async () => {
+                  if (!product) return;
+                  setBuying(true);
+                  try {
+                    const res = await fetch("/api/orders", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ productId: product.id }),
+                    });
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    const order = (await res.json()) as CreatedOrder;
+                    navigate("/checkout", { state: { order } });
+                  } catch (e) {
+                    setError(e instanceof Error ? e.message : "เกิดข้อผิดพลาด");
+                    setBuying(false);
+                  }
+                }}
               >
-                ซื้อ
+                {buying ? "กำลังสร้างออเดอร์..." : "ซื้อ"}
               </button>
             </div>
           </div>
