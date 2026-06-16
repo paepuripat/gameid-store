@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import generatePayload from "promptpay-qr";
 import { QRCodeSVG } from "qrcode.react";
-import type { CreatedOrder } from "../types";
+import type { CreatedOrder, VerifyResult } from "../types";
 
 export function Checkout() {
   const location = useLocation();
@@ -143,10 +143,10 @@ export function Checkout() {
                 if (email) fd.append("email", email);
 
                 const res = await fetch("/api/verify-slip", { method: "POST", body: fd });
-                const result = (await res.json()) as { ok: boolean; reason?: string; message?: string };
+                const result = (await res.json()) as VerifyResult;
 
                 if (result.ok) {
-                  navigate("/success", { state: { order } });
+                  navigate("/success", { state: { credential: result.credential } });
                 } else {
                   setVerifyError(result.message ?? "เกิดข้อผิดพลาด กรุณาลองใหม่");
                   setSubmitting(false);
