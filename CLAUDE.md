@@ -1,7 +1,13 @@
-# CLAUDE.md — Game ID Store (EP.1) Build Spec
+# CLAUDE.md — Game ID Store Build Spec (EP.1–EP.3)
 
 > This file is the source of truth for Claude Code when building this project.
 > Always read this file first when starting a new session.
+
+> ⛔ **Scope guard:** this file covers three episodes. **Only build the episode you are told to build.** EP.1 is the base (below). EP.2 and EP.3 are at the end and each depend on the previous one being shipped. Do not implement EP.2 or EP.3 work while building EP.1.
+
+---
+
+# EP.1 — Store + real slip verification
 
 ## Project Overview
 
@@ -154,7 +160,7 @@ export const orders = sqliteTable("orders", {
   productId: text("product_id").notNull().references(() => products.id),
   amount: real("amount").notNull(),         // THB
   email: text("email"),                     // collected now, used for sending in EP.2
-  status: text("status").notNull().default("pending"), // 'pending' | 'paid'
+  status: text("status").notNull().default("pending"), // 'pending' | 'paid'  (EP.2 adds 'delivered')
   slipTransRef: text("slip_trans_ref").unique(),        // dedup backstop; SlipOK 1012 is the primary guard
   createdAt: integer("created_at").notNull(),
 });
@@ -372,3 +378,222 @@ Done for EP.1 when:
 - Code committed to GitHub with checkpoint tags (`checkpoint-1` … `checkpoint-5`).
 - `README.md` has setup + deploy + links to blog/video.
 - `.env.example` exists (no real values).
+
+---
+---
+
+# EP.2 — Auto-deliver by email + harden the order lifecycle
+
+> ⛔ Build this only after EP.1 is shipped and you are told to start EP.2. EP.2 extends the EP.1 codebase; do not rebuild EP.1.
+
+## Episode Overview
+
+Right now (end of EP.1) a verified slip reveals the game ID on screen. EP.2 makes the system **email the credentials automatically** after payment, and hardens the order lifecycle so a paid order is never lost if the email fails. Still **no auth and no admin** — products and inventory are still seeded via `seed.sql`.
+
+Goal: pay on the live URL → the email with the game ID lands in the inbox.
+
+## Non-Negotiable Scope Rules (EP.2)
+
+- ✅ Still Tier 3 minus auth. **No Better Auth yet** (that is EP.3).
+- ✅ Add email delivery via **Resend** (REST API, called with `fetch` from the Worker — no SDK).
+- ✅ Keep the on-screen reveal from EP.1 as a **fallback**; email is the primary delivery.
+- ✅ Order lifecycle becomes `pending → paid → delivered`. A credential is claimed exactly once (at payment); email send/resend never re-claims.
+- ✅ A **resend** action re-sends the already-claimed credential for a paid order.
+- ✅ No admin UI, no customer accounts, no storing the slip image.
+- ✅ `RESEND_API_KEY` lives only in the Worker env. `RESEND_FROM` (the verified sender address) is non-secret config.
+
+## Stack Additions (EP.2)
+
+- **Resend** — transactional email. `POST https://api.resend.com/emails`, header `Authorization: Bearer <RESEND_API_KEY>`, `Content-Type: application/json`, body `{ from, to, subject, html }`. Free tier ~3,000/month. No new npm dependency required.
+- New secret: `RESEND_API_KEY`. New config: `RESEND_FROM` (e.g. `ร้านไอดีเกม <noreply@yourdomain.com>`).
+
+## Schema Changes (EP.2)
+
+Extend the existing `orders` table — additive migration only:
+
+```typescript
+export const orders = sqliteTable("orders", {
+  // ...all EP.1 columns unchanged...
+  status: text("status").notNull().default("pending"), // now: 'pending' | 'paid' | 'delivered'
+  deliveredAt: integer("delivered_at"),                 // set when the email send succeeds
+  deliveryError: text("delivery_error"),                // last send error, for the resend path
+});
+```
+
+Generate + apply (the new columns must reach **remote** D1 before the prod demo):
+```bash
+pnpm drizzle-kit generate
+wrangler d1 migrations apply gameid-store-db --local
+wrangler d1 migrations apply gameid-store-db --remote
+```
+
+## Build Checkpoints (EP.2)
+
+### Checkpoint 1 — Email helper + template
+**Deliverable:**
+- `sendCredentialEmail(env, { to, productName, credential })` in the Worker that POSTs to Resend.
+- A Thai HTML email template: product name, username / password / notes, and a "เก็บข้อมูลนี้ไว้เป็นความลับ" note.
+```ts
+const res = await fetch("https://api.resend.com/emails", {
+  method: "POST",
+  headers: {
+    Authorization: `Bearer ${env.RESEND_API_KEY}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({ from: env.RESEND_FROM, to, subject: `ไอดีเกม: ${productName}`, html }),
+});
+if (!res.ok) throw new Error(`resend ${res.status}: ${await res.text()}`);
+```
+**Verify:** call it once with your own email in `to` → the email arrives.
+
+### Checkpoint 2 — Wire email into the verify-slip success path
+**Deliverable:**
+- After the credential is claimed (EP.1 Checkpoint 4), attempt `sendCredentialEmail`. On success → set `status = 'delivered'`, `deliveredAt = now`. On failure → leave `status = 'paid'`, store `deliveryError`, and still return the credential so the on-screen reveal works.
+- Success page: show the ID AND "เราส่งไอดีไปที่อีเมลของคุณแล้ว" when delivered.
+
+**Verify:** pay with a correct slip → email arrives AND the order row is `delivered` with `deliveredAt` set. Force a send failure (bad `RESEND_FROM`) → order stays `paid`, on-screen reveal still works, `deliveryError` recorded.
+
+### Checkpoint 3 — Resend endpoint + button
+**Deliverable:**
+- `POST /api/orders/:id/resend` — loads a `paid`/`delivered` order, finds its already-claimed credential (`inventory WHERE order_id = :id`), re-sends the email, updates `deliveredAt`. **Must NOT claim a new credential.** Optionally accept a corrected `email` in the body.
+- A "ส่งอีเมลซ้ำ" button on the success page.
+
+**Verify:** click resend → the email arrives again; the same credential is sent; inventory is unchanged (no new row goes `sold`).
+
+### Checkpoint 4 — Deploy 🏆
+**Deliverable:**
+- `wrangler secret put RESEND_API_KEY`; set `RESEND_FROM`.
+- `wrangler d1 migrations apply gameid-store-db --remote` (the new columns).
+- `pnpm run deploy`.
+
+**Verify — the money shot:** on the live URL, pay → the email with the game ID lands in the inbox.
+
+## Anti-Patterns to Avoid (EP.2)
+
+- ❌ Don't re-claim inventory on resend. The claim happens once at payment; resend only re-sends the stored credential.
+- ❌ Don't fail the whole purchase if the email fails. The slip is verified and money is paid — keep `paid`, keep the on-screen reveal, allow resend.
+- ❌ Don't put `RESEND_API_KEY` in client code or a `VITE_` var.
+- ❌ Don't forget to apply the new columns to **remote** D1 before the prod demo, or the deployed app errors on the new fields.
+
+## Pre-flight (EP.2 — test OFF-camera)
+
+- 🔥 **Resend domain verification.** To email arbitrary customer addresses you need a verified domain (DKIM/SPF/DMARC DNS records). Without one, Resend's test sender only delivers to your own account email. Verify your domain off-camera, or demo by sending to your own inbox and explain the domain step on screen.
+- Confirm the `--remote` migration ran (new `delivered_at` / `delivery_error` columns exist in prod).
+- Send one real email through the deployed Worker before recording.
+
+## Done Definition (EP.2)
+
+- Paying produces a `delivered` order and an email with the credential.
+- Email failure keeps the order recoverable (paid + resend works), never loses the sale.
+- Deployed and reachable on the live URL; tags `ep2-checkpoint-1` … `ep2-checkpoint-4`.
+
+---
+---
+
+# EP.3 — Admin back-office + auth (full Tier 3)
+
+> ⛔ Build this only after EP.2 is shipped and you are told to start EP.3. EP.3 extends the EP.2 codebase.
+
+## Episode Overview
+
+Stop hand-editing `seed.sql`. EP.3 adds an **admin back-office** behind login: manage products, add inventory (the actual game IDs), and view orders. This is where authentication finally enters — **admin-only**, no customer accounts.
+
+Goal: log into admin on the live URL → add a new game ID → watch it appear in the store → buy it end-to-end.
+
+## Non-Negotiable Scope Rules (EP.3)
+
+- ✅ Full Tier 3 now: add **Better Auth** (v1.5+) for an **admin-only** login.
+- ✅ **No public sign-up.** Seed a single admin; disable the sign-up route for everyone else.
+- ✅ Admin can: CRUD products, add inventory (bulk paste), view orders. Nothing customer-facing changes.
+- ✅ Product images are **pasted URLs**, not file uploads. No R2 in EP.3.
+- ✅ The buyer flow from EP.1/EP.2 is unchanged — admin just fills the same `products`/`inventory` tables the store reads.
+- ✅ `BETTER_AUTH_SECRET` lives only in the Worker env. `BETTER_AUTH_URL` is config set to the deployed origin.
+
+## Stack Additions (EP.3)
+
+- **Better Auth** (v1.5+) with the **Drizzle adapter** so its tables (`user`, `session`, `account`, `verification`) live in the same Drizzle schema and ride the existing `drizzle-kit generate` + `wrangler d1 migrations apply` flow. (Better Auth 1.5 also supports native D1 by passing the binding directly — but that splits schema management away from Drizzle, so prefer the Drizzle adapter here for one migration story.)
+- `emailAndPassword` enabled. `cookieCache` **disabled** (`session.storeSessionInDatabase: true`) — works around the open Better Auth cookieCache + secondary-storage logout bug.
+- New secret: `BETTER_AUTH_SECRET`. New config: `BETTER_AUTH_URL` (the deployed `*.workers.dev` origin; `http://localhost:5173` in dev).
+- Generate the auth tables into the Drizzle schema with the Better Auth CLI (`pnpm dlx @better-auth/cli generate`), then migrate with the existing flow.
+
+## CRITICAL — Better Auth on Workers (read before coding)
+
+**Workers are stateless per request, and D1 is only reachable via `c.env` per request.** Create the Drizzle client AND the Better Auth instance **per request inside a Hono middleware**, store on context, and route auth through it. A module-level singleton causes 33-second hangs, mysterious 503s, and dropped sessions.
+
+```ts
+// worker/auth.ts — factory, NOT a singleton
+import { betterAuth } from "better-auth";
+import { drizzleAdapter } from "better-auth/adapters/drizzle";
+
+export function createAuth(env: Env, db: DrizzleD1) {
+  return betterAuth({
+    secret: env.BETTER_AUTH_SECRET,
+    baseURL: env.BETTER_AUTH_URL,
+    database: drizzleAdapter(db, { provider: "sqlite" }),
+    emailAndPassword: { enabled: true, disableSignUp: true }, // admin is seeded, not self-registered
+    session: { storeSessionInDatabase: true },                // cookieCache disabled (see gotcha)
+  });
+}
+```
+```ts
+// worker/index.ts — per-request middleware + auth route
+app.use("*", async (c, next) => {
+  const db = drizzle(c.env.DB);          // per request
+  c.set("auth", createAuth(c.env, db));  // per request
+  c.set("db", db);
+  await next();
+});
+app.on(["GET", "POST"], "/api/auth/*", (c) => c.get("auth").handler(c.req.raw));
+```
+
+## Schema Changes (EP.3)
+
+- Add the Better Auth tables (`user`, `session`, `account`, `verification`) — generated by the Better Auth CLI into `worker/db/schema.ts`. App tables (`products`, `inventory`, `orders`) are unchanged.
+- Migrate with the existing flow; the auth tables must reach **remote** D1 before the prod demo.
+
+## Build Checkpoints (EP.3)
+
+### Checkpoint 1 — Better Auth wired + admin seeded
+**Deliverable:** per-request auth middleware (above), auth tables migrated, a `/login` page (email + password). Seed exactly one admin user (one-off script, or sign up once then set `disableSignUp`).
+**Verify:** log in → session persists across refresh; `/api/auth/*` responds; no hangs/503s (confirms no singleton).
+
+### Checkpoint 2 — Protect admin routes + API
+**Deliverable:** middleware on `/api/admin/*` that rejects requests without a valid session (401). Client-side guard so `/admin/*` redirects to `/login` when signed out.
+**Verify:** signed out → `/admin` redirects, `/api/admin/*` returns 401. Signed in → both allowed.
+
+### Checkpoint 3 — Products admin
+**Deliverable:** `/admin/products` — list, create, edit, toggle `active`. Image via pasted URL.
+**Verify:** create a product in admin → it appears in the public store.
+
+### Checkpoint 4 — Inventory admin
+**Deliverable:** `/admin/products/:id/stock` — add credentials (textarea bulk paste, one `username,password,notes` per line → rows in `inventory`), show available stock count.
+**Verify:** add stock → the product becomes buyable; counts match.
+
+### Checkpoint 5 — Orders view
+**Deliverable:** `/admin/orders` — table of orders (status, amount, email, claimed credential id, `slipTransRef`, `deliveredAt`).
+**Verify:** a completed purchase shows as `delivered` with the right credential.
+
+### Checkpoint 6 — Deploy 🏆
+**Deliverable:** `wrangler secret put BETTER_AUTH_SECRET`; set `BETTER_AUTH_URL` to the deployed origin; `wrangler d1 migrations apply gameid-store-db --remote`; seed the admin on remote; `pnpm run deploy`.
+**Verify — the money shot:** on the live URL, log into admin → add a new game ID → it appears in the store → buy it end-to-end.
+
+## Anti-Patterns to Avoid (EP.3)
+
+- ❌ **Don't create the Better Auth or Drizzle instance as a module-level singleton.** Per request, in middleware. This is the #1 Workers failure here.
+- ❌ Don't leave public sign-up enabled — set `disableSignUp` and seed the admin.
+- ❌ Don't enable `cookieCache` alongside secondary storage — known logout-after-5-min bug; keep sessions in the database.
+- ❌ Don't set `BETTER_AUTH_URL` to localhost in prod, or auth callbacks/cookies break on the deployed origin.
+- ❌ Don't forget to migrate the auth tables to **remote** D1, and to seed the admin on remote.
+- ❌ Don't add R2 / file uploads for product images — pasted URLs only in EP.3.
+
+## Pre-flight (EP.3 — test OFF-camera)
+
+- 🔥 **Per-request auth + remote auth tables.** Before recording: confirm sign-in works against the `--remote` D1 after migrating the auth tables, confirm the admin is seeded on remote, and confirm there is NO module-level singleton (watch for hangs/503s). Confirm `BETTER_AUTH_URL` matches the deployed origin.
+- Run the full admin → store → buy loop locally before recording.
+
+## Done Definition (EP.3)
+
+- Admin login works (admin-only, no public sign-up); the per-request pattern is in place.
+- Admin can manage products, add inventory, and view orders.
+- Deployed and reachable on the live URL; the admin-adds-ID → buy-end-to-end loop works live.
+- Tags `ep3-checkpoint-1` … `ep3-checkpoint-6`.

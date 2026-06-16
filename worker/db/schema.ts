@@ -28,7 +28,9 @@ export const orders = sqliteTable("orders", {
     .references(() => products.id),
   amount: real("amount").notNull(),
   email: text("email"),
-  status: text("status").notNull().default("pending"),
+  status: text("status").notNull().default("pending"), // 'pending' | 'paid' | 'delivered'
   slipTransRef: text("slip_trans_ref").unique(),
   createdAt: integer("created_at").notNull(),
+  deliveredAt: integer("delivered_at"),
+  deliveryError: text("delivery_error"),
 });

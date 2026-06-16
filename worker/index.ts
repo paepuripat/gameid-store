@@ -4,6 +4,7 @@ import { eq, and } from "drizzle-orm";
 import { createDb } from "./db";
 import { products, inventory, orders } from "./db/schema";
 import type { VerifyResult } from "../src/types";
+import { sendCredentialEmail } from "./email";
 
 interface SlipOKResponse {
   success: boolean;
@@ -22,6 +23,8 @@ type Env = {
   SLIPOK_API_KEY: string;
   SLIPOK_BRANCH_ID: string;
   SLIPOK_BYPASS?: string;
+  RESEND_API_KEY: string;
+  RESEND_FROM: string;
 };
 
 type CredRow = { username: string; password: string; notes: string | null };
@@ -184,6 +187,7 @@ api.post("/api/verify-slip", async (c) => {
 
   return c.json<VerifyResult>({ ok: true, credential: credRows[0] });
 });
+
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
