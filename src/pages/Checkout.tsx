@@ -12,6 +12,8 @@ export function Checkout() {
   const [email, setEmail] = useState("");
   const [slip, setSlip] = useState<File | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
 
   if (!order) {
     navigate("/", { replace: true });
@@ -121,15 +123,42 @@ export function Checkout() {
             }}
           />
 
+          {verifyError && (
+            <p className="text-sm text-red-600 text-center bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+              {verifyError}
+            </p>
+          )}
+
           <button
-            disabled={!slip}
+            disabled={!slip || submitting}
             className="w-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-40 text-white font-semibold py-3 rounded-lg transition-colors"
+            onClick={async () => {
+              if (!slip || !order) return;
+              setSubmitting(true);
+              setVerifyError(null);
+              try {
+                const fd = new FormData();
+                fd.append("orderId", order.orderId);
+                fd.append("slip", slip);
+                if (email) fd.append("email", email);
+
+                const res = await fetch("/api/verify-slip", { method: "POST", body: fd });
+                const result = (await res.json()) as { ok: boolean; reason?: string; message?: string };
+
+                if (result.ok) {
+                  navigate("/success", { state: { order } });
+                } else {
+                  setVerifyError(result.message ?? "เกิดข้อผิดพลาด กรุณาลองใหม่");
+                  setSubmitting(false);
+                }
+              } catch {
+                setVerifyError("ไม่สามารถเชื่อมต่อได้ กรุณาลองใหม่");
+                setSubmitting(false);
+              }
+            }}
           >
-            ยืนยันการชำระเงิน
+            {submitting ? "กำลังตรวจสอบ..." : "ยืนยันการชำระเงิน"}
           </button>
-          <p className="text-xs text-center text-gray-400">
-            ระบบตรวจสลิปอัตโนมัติ — Checkpoint 3
-          </p>
         </div>
       </main>
     </div>
