@@ -1,6 +1,6 @@
 /// <reference types="@cloudflare/workers-types" />
 import { Hono } from "hono";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, desc } from "drizzle-orm";
 import { createDb } from "./db";
 import { products, inventory, orders } from "./db/schema";
 import type { VerifyResult } from "../src/types";
@@ -388,6 +388,30 @@ api.post("/api/admin/products/:id/stock", async (c) => {
     parsed.map((r) => ({ id: crypto.randomUUID(), productId, ...r, status: "available" as const })),
   );
   return c.json({ added: parsed.length }, 201);
+});
+
+// ── Admin: Orders (CP5) ──────────────────────────────────────────────────────
+
+api.get("/api/admin/orders", async (c) => {
+  const db = createDb(c.env.DB);
+  const rows = await db
+    .select({
+      id: orders.id,
+      productName: products.name,
+      amount: orders.amount,
+      email: orders.email,
+      status: orders.status,
+      slipTransRef: orders.slipTransRef,
+      createdAt: orders.createdAt,
+      deliveredAt: orders.deliveredAt,
+      deliveryError: orders.deliveryError,
+      claimedUsername: inventory.username,
+    })
+    .from(orders)
+    .leftJoin(products, eq(products.id, orders.productId))
+    .leftJoin(inventory, eq(inventory.orderId, orders.id))
+    .orderBy(desc(orders.createdAt));
+  return c.json(rows);
 });
 
 export default {

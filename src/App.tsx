@@ -7,6 +7,7 @@ import { Login } from "./pages/Login";
 import { Admin } from "./pages/Admin";
 import { AdminProducts } from "./pages/AdminProducts";
 import { AdminStock } from "./pages/AdminStock";
+import { AdminOrders } from "./pages/AdminOrders";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 
 export default function App() {
@@ -21,6 +22,7 @@ export default function App() {
         <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
         <Route path="/admin/products" element={<ProtectedRoute><AdminProducts /></ProtectedRoute>} />
         <Route path="/admin/products/:id/stock" element={<ProtectedRoute><AdminStock /></ProtectedRoute>} />
+        <Route path="/admin/orders" element={<ProtectedRoute><AdminOrders /></ProtectedRoute>} />
       </Routes>
     </BrowserRouter>
   );
