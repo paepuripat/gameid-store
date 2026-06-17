@@ -310,6 +310,86 @@ api.post("/api/orders/:id/resend", async (c) => {
   }
 });
 
+// ── Admin: Products (CP3) ────────────────────────────────────────────────────
+
+api.get("/api/admin/products", async (c) => {
+  const db = createDb(c.env.DB);
+  const rows = await db
+    .select({
+      id: products.id,
+      name: products.name,
+      description: products.description,
+      imageUrl: products.imageUrl,
+      price: products.price,
+      active: products.active,
+      stockCount: sql<number>`count(case when ${inventory.status} = 'available' then 1 end)`,
+    })
+    .from(products)
+    .leftJoin(inventory, eq(inventory.productId, products.id))
+    .groupBy(products.id);
+  return c.json(rows);
+});
+
+api.post("/api/admin/products", async (c) => {
+  const body = await c.req.json<{ name: string; description?: string; imageUrl?: string; price: number }>();
+  if (!body.name || body.price == null) return c.json({ error: "name and price required" }, 400);
+  const db = createDb(c.env.DB);
+  const id = crypto.randomUUID();
+  await db.insert(products).values({
+    id,
+    name: body.name,
+    description: body.description ?? null,
+    imageUrl: body.imageUrl ?? null,
+    price: body.price,
+    active: 1,
+  });
+  return c.json({ id }, 201);
+});
+
+api.patch("/api/admin/products/:id", async (c) => {
+  const productId = c.req.param("id");
+  const body = await c.req.json<Partial<{ name: string; description: string | null; imageUrl: string | null; price: number; active: number }>>();
+  const db = createDb(c.env.DB);
+  await db.update(products).set(body).where(eq(products.id, productId));
+  return c.json({ ok: true });
+});
+
+// ── Admin: Inventory / Stock (CP4) ───────────────────────────────────────────
+
+api.get("/api/admin/products/:id/stock", async (c) => {
+  const productId = c.req.param("id");
+  const db = createDb(c.env.DB);
+  const productRows = await db.select().from(products).where(eq(products.id, productId)).limit(1);
+  if (productRows.length === 0) return c.json({ error: "not_found" }, 404);
+  const items = await db
+    .select({ id: inventory.id, username: inventory.username, status: inventory.status })
+    .from(inventory)
+    .where(eq(inventory.productId, productId));
+  const available = items.filter((i) => i.status === "available").length;
+  const sold = items.filter((i) => i.status === "sold").length;
+  return c.json({ product: productRows[0], available, sold, items });
+});
+
+api.post("/api/admin/products/:id/stock", async (c) => {
+  const productId = c.req.param("id");
+  const body = await c.req.json<{ lines: string }>();
+  const parsed = (body.lines ?? "")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [u, p, ...rest] = line.split(",");
+      return { username: u?.trim() ?? "", password: p?.trim() ?? "", notes: rest.join(",").trim() || null };
+    })
+    .filter((r) => r.username && r.password);
+  if (parsed.length === 0) return c.json({ error: "no valid rows" }, 400);
+  const db = createDb(c.env.DB);
+  await db.insert(inventory).values(
+    parsed.map((r) => ({ id: crypto.randomUUID(), productId, ...r, status: "available" as const })),
+  );
+  return c.json({ added: parsed.length }, 201);
+});
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
