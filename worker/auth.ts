@@ -22,7 +22,7 @@ export function createAuth(env: AuthEnv, db: DrizzleD1) {
       "http://localhost:5174",
     ],
     database: drizzleAdapter(db, { provider: "sqlite", schema }),
-    emailAndPassword: { enabled: true, disableSignUp: false },
+    emailAndPassword: { enabled: true, disableSignUp: true },
     session: { storeSessionInDatabase: true },
   });
 }
