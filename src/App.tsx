@@ -4,6 +4,8 @@ import { ProductDetail } from "./pages/ProductDetail";
 import { Checkout } from "./pages/Checkout";
 import { Success } from "./pages/Success";
 import { Login } from "./pages/Login";
+import { Admin } from "./pages/Admin";
+import { ProtectedRoute } from "./components/ProtectedRoute";
 
 export default function App() {
   return (
@@ -14,6 +16,10 @@ export default function App() {
         <Route path="/checkout" element={<Checkout />} />
         <Route path="/success" element={<Success />} />
         <Route path="/login" element={<Login />} />
+        <Route
+          path="/admin"
+          element={<ProtectedRoute><Admin /></ProtectedRoute>}
+        />
       </Routes>
     </BrowserRouter>
   );

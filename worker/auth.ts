@@ -16,8 +16,13 @@ export function createAuth(env: AuthEnv, db: DrizzleD1) {
   return betterAuth({
     secret: env.BETTER_AUTH_SECRET,
     baseURL: env.BETTER_AUTH_URL,
+    trustedOrigins: [
+      env.BETTER_AUTH_URL,
+      "http://localhost:5173",
+      "http://localhost:5174",
+    ],
     database: drizzleAdapter(db, { provider: "sqlite", schema }),
-    emailAndPassword: { enabled: true, disableSignUp: true }, 
+    emailAndPassword: { enabled: true, disableSignUp: false },
     session: { storeSessionInDatabase: true },
   });
 }

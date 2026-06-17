@@ -46,6 +46,13 @@ api.use("*", async (c, next) => {
 // Better Auth handles all /api/auth/* routes
 api.on(["GET", "POST"], "/api/auth/*", (c) => c.get("auth").handler(c.req.raw));
 
+// Protect all /api/admin/* routes — return 401 if no valid session
+api.use("/api/admin/*", async (c, next) => {
+  const session = await c.get("auth").api.getSession({ headers: c.req.raw.headers });
+  if (!session) return c.json({ error: "Unauthorized" }, 401);
+  await next();
+});
+
 api.get("/api/products", async (c) => {
   const db = createDb(c.env.DB);
   const rows = await db
