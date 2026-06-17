@@ -15,6 +15,13 @@
       "when": 1781624691861,
       "tag": "0001_stormy_bloodscream",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1781629650153,
+      "tag": "0002_panoramic_bloodscream",
+      "breakpoints": true
     }
   ]
 }

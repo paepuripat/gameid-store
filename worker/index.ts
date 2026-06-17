@@ -5,6 +5,7 @@ import { createDb } from "./db";
 import { products, inventory, orders } from "./db/schema";
 import type { VerifyResult } from "../src/types";
 import { sendCredentialEmail } from "./email";
+import { createAuth, type Auth } from "./auth";
 
 interface SlipOKResponse {
   success: boolean;
@@ -25,11 +26,25 @@ type Env = {
   SLIPOK_BYPASS?: string;
   RESEND_API_KEY: string;
   RESEND_FROM: string;
+  BETTER_AUTH_SECRET: string;
+  BETTER_AUTH_URL: string;
 };
+
+type Variables = { auth: Auth };
 
 type CredRow = { username: string; password: string; notes: string | null };
 
-const api = new Hono<{ Bindings: Env }>();
+const api = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+// Per-request middleware: create auth instance (never a singleton)
+api.use("*", async (c, next) => {
+  const db = createDb(c.env.DB);
+  c.set("auth", createAuth(c.env, db));
+  await next();
+});
+
+// Better Auth handles all /api/auth/* routes
+api.on(["GET", "POST"], "/api/auth/*", (c) => c.get("auth").handler(c.req.raw));
 
 api.get("/api/products", async (c) => {
   const db = createDb(c.env.DB);
